@@ -28,5 +28,6 @@ executable wednesday-bot
   -- other-modules:
   -- other-extensions:
   build-depends:       base >=4.12 && <4.13
+                     , network >= 3.1.1.1
   hs-source-dirs:      src
   default-language:    Haskell2010
