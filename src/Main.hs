@@ -2,6 +2,7 @@ module Main where
 
 import           Control.Exception
 import           Control.Monad.IO.Class
+import           Data.Time
 import           Data.List
 import           System.IO
 import           System.Exit
@@ -22,14 +23,15 @@ main = bracket connect disconnect loop
     loop st    = runReaderT run st
 
 -- Net monad
-data Bot = Bot { botSocket :: Handle }
+data Bot = Bot { botSocket :: Handle, startTime :: UTCTime }
 type Net = ReaderT Bot IO
 
 -- Connect to a server given its home and port number
 connect :: IO Bot
 connect = notify $ do
+  t <- getCurrentTime
   h <- connectTo myServer myPort
-  return (Bot h)
+  return (Bot h t)
   where
     notify a = bracket_
       (putStrLn ("Connecting to " ++ myServer ++ " ...") >> hFlush stdout)
@@ -82,8 +84,30 @@ listen = forever $ do
 
 eval :: String -> Net ()
 eval "!quit"                   = write "QUIT" ":Exiting" >> liftIO exitSuccess
+eval "!uptime"                 = uptime >>= privmsg
 eval x | "!id " `isPrefixOf` x = privmsg (drop 4 x)
 eval _                         = return ()
+
+uptime :: Net String
+uptime = do
+  now <- liftIO getCurrentTime
+  zero <- asks startTime
+  return (pretty (diffUTCTime now zero))
+
+-- Pretty print the date in '1d 9h 9m 17s' format
+pretty :: NominalDiffTime -> String
+pretty diff =
+    unwords
+      . map (\(t, unit) -> show t ++ unit)
+      $ if null diffs then [(0, "s")] else diffs
+  where
+    diffs :: [(Integer, String)]
+    diffs = filter ((/= 0) . fst)
+      $ decompose [(86400, "d"), (3600, "h"), (60, "m"), (1, "s")] (floor diff)
+    decompose [] _ = []
+    decompose ((secs, unit) : metrics) t =
+      let (n, t') = t `divMod` secs
+      in (n, unit) : decompose metrics t'
 
 privmsg :: String -> Net ()
 privmsg msg = write "PRIVMSG" (myChan ++ " :" ++ msg)
